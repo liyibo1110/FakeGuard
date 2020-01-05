@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.github.liyibo1110.fakeguard.Quotas;
 import org.github.liyibo1110.fakeguard.StatsTrack;
 import org.github.liyibo1110.fakeguard.common.PathTrie;
+import org.github.liyibo1110.fakeguard.data.ACL;
 import org.github.liyibo1110.fakeguard.data.Stat;
 import org.github.liyibo1110.fakeguard.data.StatPersisted;
 import org.slf4j.Logger;
@@ -246,8 +247,13 @@ public class DataTree {
 		
 	}
 	
+	public String createNode(String path, byte[] data, List<ACL> acl,
+						long ephemeralOwner, int parentCVersion, long zxid, long time) {
+		return path;
+	}
+	
 	/**
-	 * 返回最匹配的带配额路径（）
+	 * 返回最匹配的带配额路径
 	 * @param path
 	 * @return
 	 */
