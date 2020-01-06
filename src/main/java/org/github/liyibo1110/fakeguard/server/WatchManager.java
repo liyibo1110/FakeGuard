@@ -85,7 +85,7 @@ public class WatchManager {
 			watchers = watchTable.remove(path);
 			if (watchers == null || watchers.isEmpty()) {
 				if (LOG.isTraceEnabled()) {
-					GuardTrace.logTraceMessage(LOG, GuardTrace.EVENT_DELIVERY_TRACE_MASK, 
+					FakeTrace.logTraceMessage(LOG, FakeTrace.EVENT_DELIVERY_TRACE_MASK, 
 											"No watchers for " + path);	
 				}
 				return null;

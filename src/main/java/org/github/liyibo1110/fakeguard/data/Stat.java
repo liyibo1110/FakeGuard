@@ -190,7 +190,7 @@ public class Stat implements Record {
 		if (ret != 0) return ret;
 		ret = (ctime == obj.ctime) ? 0 : ((ctime < obj.ctime) ? -1 : 1);
 		if (ret != 0) return ret;
-		ret = (mtime == obj.mtime) ? 0 : ((czxid < obj.mtime) ? -1 : 1);
+		ret = (mtime == obj.mtime) ? 0 : ((mtime < obj.mtime) ? -1 : 1);
 		
 		if (ret != 0) return ret;
 		ret = (version == obj.version) ? 0 : ((version < obj.version) ? -1 : 1);

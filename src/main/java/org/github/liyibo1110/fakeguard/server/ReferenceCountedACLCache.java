@@ -25,6 +25,9 @@ public class ReferenceCountedACLCache {
 	
 	final Map<List<ACL>, Long> aclKeyMap = new HashMap<>();
 	
+	/**
+	 * 复用相同的权限位，避免一个节点单独一个ACL值
+	 */
 	final Map<Long, AtomicLongWithEquals> referenceCounter = new HashMap<>();
 	
 	private static final long OPEN_UNSAFE_ACL_ID = -1L;

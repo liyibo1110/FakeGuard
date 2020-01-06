@@ -3,7 +3,7 @@ package org.github.liyibo1110.fakeguard.server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class GuardTrace {
+public class FakeTrace {
 
 	public static final long CLIENT_REQUEST_TRACE_MASK = 1 << 1;
 	
@@ -34,7 +34,7 @@ public class GuardTrace {
 	
 	public static void setTextTraceLevel(long mask) {
 		traceMask = mask;
-		Logger LOG = LoggerFactory.getLogger(GuardTrace.class);
+		Logger LOG = LoggerFactory.getLogger(FakeTrace.class);
 		LOG.info("Set text trace mask to 0x" + Long.toHexString(mask));
 	}
 	
