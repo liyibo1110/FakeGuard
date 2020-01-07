@@ -1,6 +1,7 @@
 package org.github.liyibo1110.fakeguard.server;
 
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -15,12 +16,16 @@ import org.github.liyibo1110.fakeguard.GuardException.Code;
 import org.github.liyibo1110.fakeguard.GuardException.NoNodeException;
 import org.github.liyibo1110.fakeguard.Quotas;
 import org.github.liyibo1110.fakeguard.StatsTrack;
+import org.github.liyibo1110.fakeguard.WatchedEvent;
 import org.github.liyibo1110.fakeguard.Watcher;
 import org.github.liyibo1110.fakeguard.Watcher.Event;
+import org.github.liyibo1110.fakeguard.Watcher.Event.EventType;
+import org.github.liyibo1110.fakeguard.Watcher.Event.GuardState;
 import org.github.liyibo1110.fakeguard.common.PathTrie;
 import org.github.liyibo1110.fakeguard.data.ACL;
 import org.github.liyibo1110.fakeguard.data.Stat;
 import org.github.liyibo1110.fakeguard.data.StatPersisted;
+import org.github.liyibo1110.fakeguard.maggot.InputArchive;
 import org.github.liyibo1110.fakeguard.maggot.OutputArchive;
 import org.github.liyibo1110.fakeguard.maggot.Record;
 import org.github.liyibo1110.fakeguard.txn.CheckVersionTxn;
@@ -904,6 +909,150 @@ public class DataTree {
 	 * 是否已初始化
 	 */
 	public boolean initialized = false;
+	
+	public void serialize(OutputArchive archive, String tag) throws IOException {
+		
+		scount = 0;
+		aclCache.serialize(archive);
+		serialzeNode(archive, new StringBuilder(""));
+		// 需要增加一个流终止标记/
+		if (root != null) {
+			archive.writeString("/", tag);
+		}
+	}
+	
+	public void deserialize(InputArchive archive, String tag) throws IOException {
+		
+		aclCache.deserialize(archive);
+		nodes.clear();
+		pTrie.clear();
+		String path = archive.readString("path");
+		while(!path.equals("/")) {
+			DataNode node = new DataNode();
+			archive.readRecord(node, "node");
+			nodes.put(path, node);
+			synchronized (node) {
+				aclCache.addUsage(node.acl);
+			}
+			int lastSlash = path.lastIndexOf('/');
+			if (lastSlash == -1) {
+				// path是根目录
+				root = node;
+			} else {
+				String parentPath = path.substring(0, lastSlash);
+				node.parent = nodes.get(parentPath);
+				if (node.parent == null) {
+					throw new IOException("Invalid Datatree, unable to find parent " + parentPath + " of path " + path);
+				}
+				node.parent.addChild(path.substring(lastSlash + 1));
+				// 处理临时节点
+				long eowner = node.stat.getEphemeralOwner();
+				if (eowner != 0) {
+					HashSet<String> list = ephemerals.get(eowner);
+					if (list == null) {
+						list = new HashSet<String>();
+						ephemerals.put(eowner, list);
+					}
+					list.add(path);
+				}
+				
+			}
+			path = archive.readString("path");
+		}
+		nodes.put("/", root);
+		// 初始化pTire和Stat节点
+		setupQuota();
+		// 清理aclCache
+		aclCache.purgeUnused();
+	}
+	
+	/**
+	 * 输出dataWatches对象而已，指定了writer
+	 * @param pwriter
+	 */
+	public synchronized void dumpWatchesSummary(PrintWriter pwriter) {
+		
+		pwriter.print(dataWatches.toString());
+	}
+	
+	public synchronized void dumpWatches(PrintWriter pwriter, boolean byPath) {
+		dataWatches.dumpWatches(pwriter, byPath);
+	}
+	
+	public void dumpEphemerals(PrintWriter pwriter) {
+		Set<Map.Entry<Long, HashSet<String>>> entrySet = ephemerals.entrySet();
+		pwriter.println("Sessions with Ephemerals (" + entrySet.size() + "):");
+		for (Map.Entry<Long, HashSet<String>> entry : entrySet) {
+			pwriter.print("0x" + Long.toHexString(entry.getKey()));
+			pwriter.println(":");
+			HashSet<String> tmp = entry.getValue();
+			if (tmp != null) {
+				synchronized (tmp) {
+					for (String path : tmp) {
+						pwriter.println("\t" + path);
+					}
+				}
+			}
+		}
+	}
+	
+	public void removeCnxn(Watcher watcher) {
+		dataWatches.removeWatcher(watcher);
+		childWatches.removeWatcher(watcher);
+	}
+	
+	/**
+	 * 压根没用到过
+	 */
+	public void clear() {
+		root = null;
+		nodes.clear();
+		ephemerals.clear();
+	}
+	
+	/**
+	 * 周边关联性非常强的一个方法
+	 * @param relativeZxid
+	 * @param dataWatches
+	 * @param existWatches
+	 * @param childWatches
+	 * @param watcher
+	 */
+	public void setWatches(long relativeZxid, List<String> dataWatches,
+						List<String> existWatches, List<String> childWatches,
+						Watcher watcher) {
+		
+		for (String path : dataWatches) {
+			DataNode node = getNode(path);
+			if (node == null) {
+				watcher.process(new WatchedEvent(EventType.NodeDeleted, GuardState.SyncConnected, path));
+			} else if (node.stat.getMzxid() > relativeZxid) {
+				watcher.process(new WatchedEvent(EventType.NodeDataChanged, GuardState.SyncConnected, path));
+			} else {
+				this.dataWatches.addWatch(path, watcher);
+			}
+		}
+		
+		for (String path : existWatches) {
+			DataNode node = getNode(path);
+			if (node != null) {
+				watcher.process(new WatchedEvent(EventType.NodeCreated, GuardState.SyncConnected, path));
+			} else {
+				this.dataWatches.addWatch(path, watcher);
+			}
+		}
+		
+		for (String path : childWatches) {
+			DataNode node = getNode(path);
+			if (node == null) {
+				watcher.process(new WatchedEvent(EventType.NodeDeleted, GuardState.SyncConnected, path));
+			} else if (node.stat.getMzxid() > relativeZxid) {
+				watcher.process(new WatchedEvent(EventType.NodeChildrenChanged, GuardState.SyncConnected, path));
+			} else {
+				this.childWatches.addWatch(path, watcher);
+			}
+		}
+	}
 	
 	public void setCversionPzxid(String path, int newCversion, long zxid) 
 			throws GuardException.NoNodeException {

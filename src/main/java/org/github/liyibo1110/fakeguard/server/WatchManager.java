@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import org.github.liyibo1110.fakeguard.WatchedEvent;
@@ -20,12 +21,12 @@ public class WatchManager {
 	/**
 	 * path对应的Watcher们
 	 */
-	private final Map<String, Set<Watcher>> watchTable = new HashMap<>();
+	private final Map<String, HashSet<Watcher>> watchTable = new HashMap<>();
 	
 	/**
 	 * Watcher对应的path们
 	 */
-	private final Map<Watcher, Set<String>> watch2Paths = new HashMap<>();
+	private final Map<Watcher, HashSet<String>> watch2Paths = new HashMap<>();
 
 	/**
 	 * 一共有多少个Watcher
@@ -40,7 +41,7 @@ public class WatchManager {
 	}
 	
 	public synchronized void addWatch(String path, Watcher watcher) {
-		Set<Watcher> watchers = watchTable.get(path);
+		HashSet<Watcher> watchers = watchTable.get(path);
 		// 没有任何Watcher
 		if (watchers == null) {
 			watchers = new HashSet<Watcher>(4);
@@ -48,7 +49,7 @@ public class WatchManager {
 		}
 		watchers.add(watcher);
 		
-		Set<String> paths = watch2Paths.get(watcher);
+		HashSet<String> paths = watch2Paths.get(watcher);
 		if (paths == null) {
 			paths = new HashSet<String>();
 			watch2Paths.put(watcher, paths);
@@ -129,8 +130,31 @@ public class WatchManager {
 	public synchronized void dumpWatches(PrintWriter pwriter, boolean byPath) {
 		if (byPath) {
 			// 按path分组，输出自己path的watcher
+			for (Entry<String, HashSet<Watcher>> e : watchTable.entrySet()) {
+				pwriter.println(e.getKey());
+				for (Watcher w : e.getValue()) {
+					pwriter.print("\t0x");
+					
+					
+					// 待完成
+					
+					
+					pwriter.print("\n");
+				}
+			}
 		} else {
+			for (Entry<Watcher, HashSet<String>> e : watch2Paths.entrySet()) {
+				pwriter.print("0x");
+				
+				
+				// 待完成
 			
+			
+				for (String path : e.getValue()) {
+					pwriter.print("\t");
+					pwriter.println(path);
+				}
+			}
 		}
 	}
 }
