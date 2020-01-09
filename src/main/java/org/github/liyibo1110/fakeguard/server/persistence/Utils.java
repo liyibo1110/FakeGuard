@@ -1,5 +1,6 @@
 package org.github.liyibo1110.fakeguard.server.persistence;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -11,6 +12,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
+import org.github.liyibo1110.fakeguard.maggot.BinaryOutputArchive;
+import org.github.liyibo1110.fakeguard.maggot.InputArchive;
+import org.github.liyibo1110.fakeguard.maggot.OutputArchive;
+import org.github.liyibo1110.fakeguard.maggot.Record;
+import org.github.liyibo1110.fakeguard.txn.TxnHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,6 +81,41 @@ public class Utils {
 			}
 		}
 		return true;
+	}
+	
+	/**
+	 * 读取
+	 * @param ia
+	 * @return
+	 * @throws IOException
+	 */
+	public static byte[] readTxnBytes(InputArchive ia) throws IOException {
+		
+		byte[] bytes = ia.readBuffer("txnEntry");	// 源代码有拼写错误
+		if (bytes.length == 0) return bytes;
+		if (ia.readByte("EOF") != 'B') {
+			LOG.error("Last transaction was partial.");
+			return null;
+		}
+		return bytes;
+	}
+	
+	public static byte[] marshallTxnEntry(TxnHeader hdr, Record txn) throws IOException {
+		
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		OutputArchive boa = BinaryOutputArchive.getArchive(baos);
+		hdr.serialize(boa, "hdr");
+		if (txn != null) {
+			txn.serialize(boa, "txn");
+		}
+		return baos.toByteArray();
+	}
+	
+	public static void writeTxnBytes(OutputArchive oa, byte[] bytes) throws IOException {
+		
+		oa.writeBuffer(bytes, "txnEntry");
+		// 最后追加一个字符B
+		oa.writeByte((byte)0x42, "EOR");
 	}
 	
 	private static class DataDirFileComparator implements Comparator<File>, Serializable {
