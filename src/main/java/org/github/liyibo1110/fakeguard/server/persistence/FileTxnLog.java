@@ -9,6 +9,7 @@ import java.io.FileOutputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -17,8 +18,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.Adler32;
 import java.util.zip.Checksum;
-
-import javax.annotation.PostConstruct;
 
 import org.github.liyibo1110.fakeguard.maggot.BinaryInputArchive;
 import org.github.liyibo1110.fakeguard.maggot.BinaryOutputArchive;
@@ -203,12 +202,6 @@ public class FileTxnLog implements TxnLog {
 		return result.toArray(new File[0]);
 	}
 	
-	@Override
-	public TxnIterator read(long zxid) throws IOException {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
 	/**
 	 * 找出所有log文件的最后一条zxid，先定位文件，然后定位最后一条数据
 	 */
@@ -275,17 +268,66 @@ public class FileTxnLog implements TxnLog {
 	}
 	
 	@Override
+	public TxnIterator read(long zxid) throws IOException {
+		
+		return new FileTxnIterator(logDir, zxid);
+	}
+	
+	@Override
 	public boolean truncate(long zxid) throws IOException {
-		// TODO Auto-generated method stub
-		return false;
+		
+		FileTxnIterator iter = null;
+		try {
+			iter = new FileTxnIterator(logDir, zxid);
+			PositionInputStream input = iter.pis;
+			if (input == null) {
+				throw new IOException("No log files found to truncate! This could " +
+						"happen if you still have snapshots from an old setup or " +
+						"log files were deleted accidentally or dataLogDir was changed in fake.cfg.");
+			}
+			long pos = input.getPosition();
+			RandomAccessFile raf = new RandomAccessFile(iter.logFile, "rw");
+			// 截断当前文件内更大的zxid
+			raf.setLength(pos);
+			raf.close();
+			// 直接删除后面的log文件们
+			while (iter.goToNextLog()) {
+				if (!iter.logFile.delete()) {
+					LOG.warn("Unable to truncate {}", iter.logFile);
+				}
+			}
+		} finally {
+			close(iter);
+		}
+		return true;
 	}
 
+	private static FileHeader readHeader(File file) throws IOException {
+		
+		try (InputStream is = new BufferedInputStream(new FileInputStream(file))) {
+			InputArchive ia = BinaryInputArchive.getArchive(is);
+			FileHeader hdr = new FileHeader();
+			hdr.deserialize(ia, "fileheader");
+			return hdr;
+		}
+	}
+	
 	@Override
 	public long getDbId() throws IOException {
-		// TODO Auto-generated method stub
-		return 0;
+		
+		FileTxnIterator iter = new FileTxnIterator(logDir, 0);
+		FileHeader hdr = readHeader(iter.logFile);
+		iter.close();
+		if (hdr == null) {
+			throw new IOException("Unsupported Format.");
+		}
+		return hdr.getDbid();
 	}
 
+	public boolean isForceSync() {
+		return forceSync;
+	}
+	
 	/**
 	 * 附带了postion计数器变量的输入流
 	 *
@@ -380,6 +422,12 @@ public class FileTxnLog implements TxnLog {
 			}
 			// 加载第一个log文件
 			goToNextLog();
+			// 加载第一条record
+			if (!next()) return;
+			// 跳过构造迭代器时传入的zxid之前的
+			while (hdr.getZxid() < zxid) {
+				if (!next()) return;
+			}
 		}
 		
 		/**
@@ -433,19 +481,32 @@ public class FileTxnLog implements TxnLog {
 		@Override
 		public boolean next() throws IOException {
 			if (ia == null) return false;
-			long crcValue = ia.readLong("txnEntryCRC");	// 源代码里tag为crcvalue，根本对不上
-			byte[] bytes = Utils.readTxnBytes(ia);
-			if (bytes == null || bytes.length == 0) {
-				throw new EOFException("Failed to read " + logFile);
+			try {
+				long crcValue = ia.readLong("txnEntryCRC");	// 源代码里tag为crcvalue，根本对不上
+				byte[] bytes = Utils.readTxnBytes(ia);
+				if (bytes == null || bytes.length == 0) {
+					throw new EOFException("Failed to read " + logFile);
+				}
+				Checksum crc = makeChecksumAlgorithm();
+				crc.update(bytes, 0, bytes.length);
+				if (crcValue != crc.getValue()) {
+					throw new IOException(CRC_ERROR);
+				}
+				hdr = new TxnHeader();
+				record = SerializeUtils.deserializeTxn(bytes, hdr);
+			} catch (EOFException e) {
+				LOG.debug("EOF exception " + e);
+				pis.close();
+				pis = null;
+				ia = null;
+				hdr = null;
+				// 重要！转到下一个log文件
+				if (!goToNextLog()) return false;
+				return next();
+			} catch (IOException e) {
+				pis.close();
+				throw e;
 			}
-			Checksum crc = makeChecksumAlgorithm();
-			crc.update(bytes, 0, bytes.length);
-			if (crcValue != crc.getValue()) {
-				throw new IOException(CRC_ERROR);
-			}
-			hdr = new TxnHeader();
-			record = SerializeUtils.deserializeTxn(bytes, hdr);
-			// 没有加入catch部分
 			return true;
 		}
 		
