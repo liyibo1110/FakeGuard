@@ -27,6 +27,11 @@ public class Utils {
 	private static final String LOG_DIR = "logDir";
 	private static final String DB_FORMAT_CONV = "dbFormatConversion";
 	
+	/**
+	 * 没见到被外界调用过
+	 * @param zxid
+	 * @return
+	 */
 	public static String makeLogName(long zxid) {
 		return FileTxnLog.LOG_FILE_PREFIX + "." + Long.toHexString(zxid);
 	}
@@ -147,5 +152,25 @@ public class Utils {
 		List<File> fileList = Arrays.asList(files);
 		Collections.sort(fileList, new DataDirFileComparator(prefix, ascending));
 		return fileList;
+	}
+	
+	/**
+	 * 是否为一个logfile的文件名
+	 * @param fileName
+	 * @return
+	 */
+	public static boolean isLogFileName(String fileName) {
+		
+		return fileName.startsWith(FileTxnLog.LOG_FILE_PREFIX + ".");
+	}
+	
+	/**
+	 * 是否为一个snapshot的文件名
+	 * @param fileName
+	 * @return
+	 */
+	public static boolean isSnapshotFileName(String fileName) {
+		
+		return fileName.startsWith(FileSnap.SNAPSHOT_FILE_PREFIX + ".");
 	}
 }

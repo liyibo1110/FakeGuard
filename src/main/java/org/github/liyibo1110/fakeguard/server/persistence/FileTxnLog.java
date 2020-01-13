@@ -206,7 +206,7 @@ public class FileTxnLog implements TxnLog {
 	 * 找出所有log文件的最后一条zxid，先定位文件，然后定位最后一条数据
 	 */
 	@Override
-	public long getLastLoggedZxid() throws IOException {
+	public long getLastLoggedZxid() {
 		
 		File[] files = getLogFiles(logDir.listFiles(), 0);
 		long maxLog = files.length > 0 ? Utils.getZxidFromName(files[files.length - 1].getName(), LOG_FILE_PREFIX) : -1;
